@@ -3,7 +3,7 @@
 #[macro_use]
 extern crate combine;
 
-use combine::parser::char::{letter, char, alpha_num, spaces};
+use combine::parser::char::{letter, char, alpha_num, spaces, string};
 use combine::stream::{Stream};
 
 use combine::*;
@@ -26,6 +26,28 @@ parser! {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub struct Graph {
+    name: String,
+    inputs: Vec<String>,
+    outputs: Vec<String>,
+    body: String,
+}
+
+parser! {
+    fn graph[I]()(I) -> Graph
+        where [I: Stream<Item=char>]
+    {
+        (string("graph").skip(spaces()),
+         identifier().skip(spaces()),
+         between(token('('), token(')'), id_list()),
+         spaces().with(string("->")).skip(spaces()),
+         between(token('('), token(')').skip(spaces()), id_list()),
+         between(token('{'), token('}'), many(satisfy(|c| c != '}'))),
+        ).map( |t| Graph{name: t.1, inputs: t.2, outputs: t.4, body: t.5})
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -45,5 +67,18 @@ mod tests {
     fn id_list_test() {
         assert_eq!(id_list().parse("a"), Ok((vec!["a".to_string()], "")));
         assert_eq!(id_list().parse(" a, b "), Ok((vec!["a".to_string(), "b".to_string()], "")));
+    }
+
+    fn graph_test() {
+        assert_eq!(graph().parse(r#"
+graph hoge ( input ) -> (output)
+{
+}
+"#),
+                   Ok((Graph{name: "hoge".to_string(),
+                             inputs: vec!["input".to_string()],
+                             outputs: vec!["output".to_string()],
+                             body: "".to_string()}, "")));
+
     }
 }
