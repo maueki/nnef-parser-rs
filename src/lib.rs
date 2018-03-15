@@ -3,7 +3,7 @@
 #[macro_use]
 extern crate combine;
 
-use combine::parser::char::{letter, char, alpha_num, spaces, string};
+use combine::parser::char::{letter, char, alpha_num, spaces, string, newline, digit};
 use combine::stream::{Stream};
 
 use combine::*;
@@ -39,7 +39,7 @@ pub struct Graph {
     name: Ident,
     inputs: Vec<Ident>,
     outputs: Vec<Ident>,
-    body: String,
+    body: Vec<Assignment>,
 }
 
 parser! {
@@ -53,7 +53,8 @@ parser! {
          between(token('('), token(')'), id_list()),
          spaces().with(string("->")).skip(spaces()),
          between(token('('), token(')').skip(spaces()), id_list()),
-         between(token('{'), token('}'), many(satisfy(|c| c != '}'))),
+         between(token('{'), token('}'), sep_by(spaces().with(assignment()).skip(spaces()),
+                                                token(';').or(newline()))),
         ).map( |t| Graph{name: t.1, inputs: t.2, outputs: t.4, body: t.5})
     }
 }
@@ -99,6 +100,16 @@ pub struct Assignment {
 }
 
 parser! {
+    fn literal[I]()(I) -> Literal
+        where[I: Stream<Item=char>]
+    {
+        // TODO: string-literal, logical-literal
+        many1(digit()).map(Literal::Num)
+    }
+}
+
+
+parser! {
     fn array_rvalue_expr[I]()(I) -> RvalueExpr
         where[I: Stream<Item=char>]
     {
@@ -123,9 +134,9 @@ parser! {
         where[I: Stream<Item=char>]
     {
         identifier().map(|s| RvalueExpr::Id(s))
-            //.or(literal())
             .or(array_rvalue_expr())
             .or(tuple_rvalue_expr())
+            .or(literal().map(RvalueExpr::Lit))
     }
 }
 
@@ -226,8 +237,38 @@ graph hoge ( input ) -> (output)
                    Ok((Graph{name: Ident::new("hoge"),
                              inputs: vec![Ident::new("input")],
                              outputs: vec![Ident::new("output")],
-                             body: "".to_string()}, "")));
+                             body: Vec::new()}, "")));
 
+        assert_eq!(graph().parse(r#"
+graph barfoo( input ) -> ( output )
+{
+    input = external(shape = [1,10])
+    intermediate, extra = bar(input, alpha = 2)
+    output = foo(intermediate, size = [3,5])
+}
+"#),
+                   Ok((Graph{name: Ident::new("barfoo"),
+                             inputs: vec![Ident::new("input")],
+                             outputs: vec![Ident::new("output")],
+                             body: vec![
+                                 Assignment{lexpr: LvalueExpr::Id(Ident::new("input")),
+                                            invoc: Invocation{name: Ident::new("external"),
+                                                              args: vec![Argument::Named(Ident::new("shape"),
+                                                                                         RvalueExpr::Array(vec![RvalueExpr::Lit(Literal::Num("1".to_string())),
+                                                                                                                RvalueExpr::Lit(Literal::Num("10".to_string()))]))]}},
+                                 Assignment{lexpr: LvalueExpr::Tuple(vec![LvalueExpr::Id(Ident::new("intermediate")),
+                                                                          LvalueExpr::Id(Ident::new("extra"))]),
+                                            invoc: Invocation{name: Ident::new("bar"),
+                                                              args: vec![Argument::Rval(RvalueExpr::Id(Ident::new("input"))),
+                                                                         Argument::Named(Ident::new("alpha"),
+                                                                                         RvalueExpr::Lit(Literal::Num("2".to_string())))]}},
+                                 Assignment{lexpr: LvalueExpr::Id(Ident::new("output")),
+                                            invoc: Invocation{name: Ident::new("foo"),
+                                                              args: vec![Argument::Rval(RvalueExpr::Id(Ident::new("intermediate"))),
+                                                                         Argument::Named(Ident::new("size"),
+                                                                                         RvalueExpr::Array(vec![RvalueExpr::Lit(Literal::Num("3".to_string())),
+                                                                                                                RvalueExpr::Lit(Literal::Num("5".to_string()))]))]}},
+                                 ]}, "")));
     }
 
     fn rvalue_expr_test() {
