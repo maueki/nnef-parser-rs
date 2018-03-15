@@ -34,14 +34,6 @@ parser! {
     }
 }
 
-parser! {
-    fn id_list[I]()(I) -> Vec<Ident>
-        where [I: Stream<Item=char>]
-    {
-        sep_by(spaces().with(identifier().skip(spaces())), token(','))
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub struct Graph {
     name: Ident,
@@ -54,6 +46,8 @@ parser! {
     fn graph[I]()(I) -> Graph
         where [I: Stream<Item=char>]
     {
+        let id_list = || sep_by(spaces().with(identifier().skip(spaces())), token(','));
+
         (string("graph").skip(spaces()),
          identifier().skip(spaces()),
          between(token('('), token(')'), id_list()),
@@ -149,9 +143,14 @@ parser! {
     fn tuple_lvalue_expr[I]()(I) -> LvalueExpr
         where[I: Stream<Item=char>]
     {
-        between(token('('), token(')'),
+        let with_paren = between(token('('), token(')'),
                 sep_by(spaces().with(lvalue_expr().skip(spaces())), token(',')))
-            .map(|v| LvalueExpr::Tuple(v))
+            .map(|v| LvalueExpr::Tuple(v));
+
+        with_paren.or(
+            (lvalue_expr(),
+             many1::<Vec<LvalueExpr>, _>(spaces().with(token(',').with(spaces().with(lvalue_expr())))))
+                .map(|mut t| LvalueExpr::Tuple({ t.1.insert(0, t.0); t.1})))
     }
 }
 
@@ -218,11 +217,6 @@ mod tests {
         assert_eq!(identifier().parse(""), Err(UnexpectedParse));
     }
 
-    fn id_list_test() {
-        assert_eq!(id_list().parse("a"), Ok((vec![Ident::new("a")], "")));
-        assert_eq!(id_list().parse(" a, b "), Ok((vec![Ident::new("a"), Ident::new("b")], "")));
-    }
-
     fn graph_test() {
         assert_eq!(graph().parse(r#"
 graph hoge ( input ) -> (output)
@@ -244,6 +238,12 @@ graph hoge ( input ) -> (output)
     fn assignment_test() {
         assert_eq!(assignment().parse("hoge = fuga( foo );"),
                    Ok((Assignment{lexpr: LvalueExpr::Id(Ident::new("hoge")),
+                                  invoc: Invocation{name:Ident::new("fuga"),
+                                                    args: vec![Argument::Rval(RvalueExpr::Id(Ident::new("foo")))]}}, "")));
+
+        assert_eq!(assignment().parse("a1, a2 = fuga ( foo )"),
+                   Ok((Assignment{lexpr: LvalueExpr::Tuple(vec![LvalueExpr::Id(Ident::new("a1")),
+                                                                LvalueExpr::Id(Ident::new("a2"))]),
                                   invoc: Invocation{name:Ident::new("fuga"),
                                                     args: vec![Argument::Rval(RvalueExpr::Id(Ident::new("foo")))]}}, "")));
     }
