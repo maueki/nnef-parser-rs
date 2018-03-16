@@ -4,7 +4,7 @@
 extern crate combine;
 
 use combine::parser::char::{letter, char, alpha_num, space, string, newline, digit};
-use combine::stream::{Stream};
+use combine::stream::Stream;
 
 use combine::*;
 
@@ -13,13 +13,12 @@ use std::vec::Vec;
 
 #[derive(Debug, PartialEq)]
 pub struct Ident {
-    name: String
+    name: String,
 }
 
 impl Ident {
-    pub fn new<T: Into<String>>(name: T) -> Self
-    {
-        Ident{name: name.into()}
+    pub fn new<T: Into<String>>(name: T) -> Self {
+        Ident { name: name.into() }
     }
 }
 
@@ -68,17 +67,44 @@ parser! {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct Numeric {
+    int: String,
+    frac: Option<String>,
+    exp: Option<String>,
+}
+
+impl Numeric {
+    #[cfg(test)]
+    pub fn new<T: Into<String>>(i: T) -> Self {
+        Numeric {
+            int: i.into(),
+            frac: None,
+            exp: None,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn new_fe<T: Into<String>>(i: T, f: Option<T>, e: Option<T>) -> Self {
+        Numeric {
+            int: i.into(),
+            frac: f.map(|c| c.into()),
+            exp: e.map(|c| c.into()),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Literal {
-    Num(String),
+    Num(Numeric),
     String(String),
-    Logical(bool)
+    Logical(bool),
 }
 
 #[derive(Debug, PartialEq)]
 pub enum LvalueExpr {
     Id(Ident),
     Array(Vec<LvalueExpr>),
-    Tuple(Vec<LvalueExpr>)
+    Tuple(Vec<LvalueExpr>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -108,11 +134,31 @@ pub struct Assignment {
 }
 
 parser! {
+    fn numeric[I]()(I) -> Numeric
+        where[I: Stream<Item=char>]
+    {
+        let unsigned = || many1(digit());
+        let signed = || token('-').with(unsigned()).map(|x: String| "-".to_string() + x.as_ref());
+
+        (signed().or(unsigned()),
+         optional(token('.').with(many1(digit()))),
+         optional(token('e').or(token('E')).with(signed().or(unsigned()))))
+            .map(|t| Numeric{int: t.0, frac: t.1, exp: t.2})
+    }
+}
+
+parser! {
     fn literal[I]()(I) -> Literal
         where[I: Stream<Item=char>]
     {
-        // TODO: string-literal, logical-literal
-        many1(digit()).map(Literal::Num)
+        // TODO: float-literal, escape sequence in string-literal
+        choice! {
+            numeric().map(Literal::Num),
+            between(token('"'), token('"'),
+                    many(satisfy(|c| c != '"'))).map(Literal::String),
+            try(string("true")).map(|_| Literal::Logical(true)),
+            try(string("false")).map(|_| Literal::Logical(false))
+        }
     }
 }
 
@@ -141,10 +187,12 @@ parser! {
     fn rvalue_expr[I]()(I) -> RvalueExpr
         where[I: Stream<Item=char>]
     {
-        identifier().map(|s| RvalueExpr::Id(s))
-            .or(array_rvalue_expr())
-            .or(tuple_rvalue_expr())
-            .or(literal().map(RvalueExpr::Lit))
+        choice! {
+            literal().map(RvalueExpr::Lit),
+            identifier().map(RvalueExpr::Id),
+            array_rvalue_expr(),
+            tuple_rvalue_expr()
+        }
     }
 }
 
@@ -166,10 +214,23 @@ parser! {
                 sep_by(whitespace().with(lvalue_expr().skip(whitespace())), token(',')))
             .map(|v| LvalueExpr::Tuple(v));
 
-        with_paren.or(
-            (lvalue_expr(),
-             many1::<Vec<LvalueExpr>, _>(whitespace().with(token(',').with(whitespace().with(lvalue_expr())))))
-                .map(|mut t| LvalueExpr::Tuple({ t.1.insert(0, t.0); t.1})))
+        // TODO: why match failed?
+        // let without_paren = (identifier().map(LvalueExpr::Id),
+        //                      many1(whitespace().with(token(',')).skip(whitespace())
+        //                            .with(identifier().map(LvalueExpr::Id))))
+
+        let without_paren = (identifier().map(LvalueExpr::Id).skip(whitespace()),
+                             many1(token(',').skip(whitespace())
+                                   .with(identifier().map(LvalueExpr::Id)).skip(whitespace())))
+            .map(|(i, mut is): (LvalueExpr, Vec<LvalueExpr>)| LvalueExpr::Tuple({
+                is.insert(0, i);
+                is
+            }));
+
+        choice! {
+            with_paren,
+            try(without_paren)
+        }
     }
 }
 
@@ -177,10 +238,11 @@ parser! {
     fn lvalue_expr[I]()(I) -> LvalueExpr
         where[I: Stream<Item=char>]
     {
-        identifier().map(|s| LvalueExpr::Id(s))
-            //.or(literal())
-            .or(array_lvalue_expr())
-            .or(tuple_lvalue_expr())
+        choice! {
+            array_lvalue_expr(),
+            try(tuple_lvalue_expr()), // why need try??
+            identifier().map(LvalueExpr::Id)
+        }
     }
 }
 
@@ -194,7 +256,10 @@ parser! {
                      rvalue_expr())
             .map(|t| Argument::Named(t.0, t.2));
 
-        named.or(rvalue_expr().map(Argument::Rval))
+        choice! {
+            try(named),
+            rvalue_expr().map(Argument::Rval)
+        }
     }
 }
 
@@ -204,7 +269,7 @@ parser! {
     {
         (identifier().skip(whitespace()),
          between(token('('), token(')'),
-                 sep_by(whitespace().with(argument().skip(whitespace())), token(','))))
+                 sep_by(whitespace().with(argument()).skip(whitespace()), token(','))))
             .map(|t| Invocation{name: t.0, args: t.1})
     }
 }
@@ -213,9 +278,9 @@ parser ! {
     fn assignment[I]()(I) -> Assignment
         where [I: Stream<Item=char>]
     {
-        (lvalue_expr().skip(whitespace()),
-         token('=').skip(whitespace()),
-         invocation().skip(whitespace()).skip(token(';')))
+        (lvalue_expr(),
+         whitespace().with(token('=')).skip(whitespace()),
+         invocation().skip(whitespace().and(token(';').or(newline()))))
             .map(|t| Assignment{lexpr: t.0, invoc: t.2})
     }
 }
@@ -227,27 +292,40 @@ mod tests {
     use combine::error::StringStreamError::*;
 
     #[test]
-    fn id_test() {
+    fn identifier_test() {
         assert_eq!(identifier().parse("a"), Ok((Ident::new("a"), "")));
+        assert_eq!(identifier().parse("a2"), Ok((Ident::new("a2"), "")));
         assert_eq!(identifier().parse("abc12"), Ok((Ident::new("abc12"), "")));
         assert_eq!(identifier().parse("_12"), Ok((Ident::new("_12"), "")));
+        assert_eq!(identifier().parse("foo"), Ok((Ident::new("foo"), "")));
 
         assert_eq!(identifier().parse("123"), Err(UnexpectedParse));
         assert_eq!(identifier().parse(""), Err(UnexpectedParse));
     }
 
     fn graph_test() {
-        assert_eq!(graph().parse(r#"
+        assert_eq!(
+            graph().parse(
+                r#"
 graph hoge ( input ) -> (output)
 {
 }
-"#),
-                   Ok((Graph{name: Ident::new("hoge"),
-                             inputs: vec![Ident::new("input")],
-                             outputs: vec![Ident::new("output")],
-                             body: Vec::new()}, "")));
+"#,
+            ),
+            Ok((
+                Graph {
+                    name: Ident::new("hoge"),
+                    inputs: vec![Ident::new("input")],
+                    outputs: vec![Ident::new("output")],
+                    body: Vec::new(),
+                },
+                "",
+            ))
+        );
 
-        assert_eq!(graph().parse(r#"
+        assert_eq!(
+            graph().parse(
+                r#"
 # comment
 graph barfoo( input ) -> ( output )
 { # comment
@@ -256,46 +334,172 @@ graph barfoo( input ) -> ( output )
     intermediate, extra = bar(input, alpha = 2)
     output = foo(intermediate, size = [3,5])
 }
-"#),
-                   Ok((Graph{name: Ident::new("barfoo"),
-                             inputs: vec![Ident::new("input")],
-                             outputs: vec![Ident::new("output")],
-                             body: vec![
-                                 Assignment{lexpr: LvalueExpr::Id(Ident::new("input")),
-                                            invoc: Invocation{name: Ident::new("external"),
-                                                              args: vec![Argument::Named(Ident::new("shape"),
-                                                                                         RvalueExpr::Array(vec![RvalueExpr::Lit(Literal::Num("1".to_string())),
-                                                                                                                RvalueExpr::Lit(Literal::Num("10".to_string()))]))]}},
-                                 Assignment{lexpr: LvalueExpr::Tuple(vec![LvalueExpr::Id(Ident::new("intermediate")),
-                                                                          LvalueExpr::Id(Ident::new("extra"))]),
-                                            invoc: Invocation{name: Ident::new("bar"),
-                                                              args: vec![Argument::Rval(RvalueExpr::Id(Ident::new("input"))),
-                                                                         Argument::Named(Ident::new("alpha"),
-                                                                                         RvalueExpr::Lit(Literal::Num("2".to_string())))]}},
-                                 Assignment{lexpr: LvalueExpr::Id(Ident::new("output")),
-                                            invoc: Invocation{name: Ident::new("foo"),
-                                                              args: vec![Argument::Rval(RvalueExpr::Id(Ident::new("intermediate"))),
-                                                                         Argument::Named(Ident::new("size"),
-                                                                                         RvalueExpr::Array(vec![RvalueExpr::Lit(Literal::Num("3".to_string())),
-                                                                                                                RvalueExpr::Lit(Literal::Num("5".to_string()))]))]}},
-                                 ]}, "")));
+"#,
+            ),
+            Ok((
+                Graph {
+                    name: Ident::new("barfoo"),
+                    inputs: vec![Ident::new("input")],
+                    outputs: vec![Ident::new("output")],
+                    body: vec![
+                        Assignment {
+                            lexpr: LvalueExpr::Id(Ident::new("input")),
+                            invoc: Invocation {
+                                name: Ident::new("external"),
+                                args: vec![
+                                    Argument::Named(
+                                        Ident::new("shape"),
+                                        RvalueExpr::Array(vec![
+                                            RvalueExpr::Lit(Literal::Num(Numeric::new("1"))),
+                                            RvalueExpr::Lit(Literal::Num(Numeric::new("10"))),
+                                        ])
+                                    ),
+                                ],
+                            },
+                        },
+                        Assignment {
+                            lexpr: LvalueExpr::Tuple(vec![
+                                LvalueExpr::Id(Ident::new("intermediate")),
+                                LvalueExpr::Id(Ident::new("extra")),
+                            ]),
+                            invoc: Invocation {
+                                name: Ident::new("bar"),
+                                args: vec![
+                                    Argument::Rval(RvalueExpr::Id(Ident::new("input"))),
+                                    Argument::Named(
+                                        Ident::new("alpha"),
+                                        RvalueExpr::Lit(Literal::Num(Numeric::new("2")))
+                                    ),
+                                ],
+                            },
+                        },
+                        Assignment {
+                            lexpr: LvalueExpr::Id(Ident::new("output")),
+                            invoc: Invocation {
+                                name: Ident::new("foo"),
+                                args: vec![
+                                    Argument::Rval(
+                                        RvalueExpr::Id(Ident::new("intermediate"))
+                                    ),
+                                    Argument::Named(
+                                        Ident::new("size"),
+                                        RvalueExpr::Array(vec![
+                                            RvalueExpr::Lit(Literal::Num(Numeric::new("3"))),
+                                            RvalueExpr::Lit(Literal::Num(Numeric::new("5"))),
+                                        ])
+                                    ),
+                                ],
+                            },
+                        },
+                    ],
+                },
+                "",
+            ))
+        );
     }
 
+    #[test]
+    fn lvalue_expr_test() {
+        assert_eq!(
+            lvalue_expr().parse("hoge"),
+            Ok((LvalueExpr::Id(Ident::new("hoge")), "")));
+
+        assert_eq!(
+            lvalue_expr().parse("hoge, fuga"),
+            Ok((LvalueExpr::Tuple(vec![LvalueExpr::Id(Ident::new("hoge")),
+                                       LvalueExpr::Id(Ident::new("fuga"))]), "")));
+
+        assert_eq!(
+            lvalue_expr().parse("a1, a2 ="),
+            Ok((LvalueExpr::Tuple(vec![LvalueExpr::Id(Ident::new("a1")),
+                                       LvalueExpr::Id(Ident::new("a2"))]), "=")));
+    }
+
+    #[test]
     fn rvalue_expr_test() {
-        assert_eq!(rvalue_expr().parse("hoge"),
-                    Ok((RvalueExpr::Id(Ident::new("hoge")), "")));
+        assert_eq!(
+            rvalue_expr().parse("hoge"),
+            Ok((RvalueExpr::Id(Ident::new("hoge")), ""))
+        );
+
+        assert_eq!(
+            rvalue_expr().parse("foo"),
+            Ok((RvalueExpr::Id(Ident::new("foo")), ""))
+        );
     }
 
-    fn assignment_test() {
-        assert_eq!(assignment().parse("hoge = fuga( foo );"),
-                   Ok((Assignment{lexpr: LvalueExpr::Id(Ident::new("hoge")),
-                                  invoc: Invocation{name:Ident::new("fuga"),
-                                                    args: vec![Argument::Rval(RvalueExpr::Id(Ident::new("foo")))]}}, "")));
+    #[test]
+    fn argument_test() {
+        assert_eq!(
+            argument().parse("foo"),
+            Ok((Argument::Rval(RvalueExpr::Id(Ident::new("foo"))), ""))
+        );
+    }
 
-        assert_eq!(assignment().parse("a1, a2 = fuga ( foo )"),
+    #[test]
+    fn invocation_test() {
+        assert_eq!(
+            invocation().parse("fuga( foo )"),
+            Ok((
+                Invocation {
+                    name: Ident::new("fuga"),
+                    args: vec![Argument::Rval(RvalueExpr::Id(Ident::new("foo")))],
+                },
+                "",
+            ))
+        );
+    }
+
+    #[test]
+    fn assignment_test() {
+        println!("{:?}",assignment().easy_parse("a1, a2 = fuga( foo ) ;"));
+
+
+        assert_eq!(
+            assignment().parse("hoge = fuga( foo ) ;"),
+            Ok((
+                Assignment {
+                    lexpr: LvalueExpr::Id(Ident::new("hoge")),
+                    invoc: Invocation {
+                        name: Ident::new("fuga"),
+                        args: vec![Argument::Rval(RvalueExpr::Id(Ident::new("foo")))],
+                    },
+                },
+                "",
+            ))
+        );
+
+        assert_eq!(assignment().parse("a1, a2 = fuga ( foo );"),
                    Ok((Assignment{lexpr: LvalueExpr::Tuple(vec![LvalueExpr::Id(Ident::new("a1")),
                                                                 LvalueExpr::Id(Ident::new("a2"))]),
                                   invoc: Invocation{name:Ident::new("fuga"),
                                                     args: vec![Argument::Rval(RvalueExpr::Id(Ident::new("foo")))]}}, "")));
     }
+
+    #[test]
+    fn literal_test() {
+        assert_eq!(
+            literal().parse("123"),
+            Ok((Literal::Num(Numeric::new("123")), ""))
+        );
+        assert_eq!(
+            literal().parse(r#""test""#),
+            Ok((Literal::String("test".to_string()), ""))
+        );
+        // TODO: assert_eq!(literal().parse("true"), Ok((Literal::Logical(true), "")));
+        // TODO: assert_eq!(literal().parse("false"), Ok((Literal::Logical(false), "")));
+    }
+
+    #[test]
+    fn numeric_test() {
+        assert_eq!(
+            numeric().parse("123e3"),
+            Ok((Numeric::new_fe("123", None, Some("3")), ""))
+        );
+        assert_eq!(
+            numeric().parse("-123.2e3"),
+            Ok((Numeric::new_fe("-123", Some("2"), Some("3")), ""))
+        );
+    }
+
 }
