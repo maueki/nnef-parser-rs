@@ -3,7 +3,7 @@
 #[macro_use]
 extern crate combine;
 
-use combine::parser::char::{letter, char, alpha_num, spaces, string, newline, digit};
+use combine::parser::char::{letter, char, alpha_num, space, string, newline, digit};
 use combine::stream::{Stream};
 
 use combine::*;
@@ -23,6 +23,14 @@ impl Ident {
     }
 }
 
+parser! {
+    fn whitespace[I]()(I) -> ()
+        where [I: Stream<Item=char>]
+    {
+        let comment = (token('#'), skip_many(satisfy(|c| c != '\n'))).map(|_| ());
+        skip_many(skip_many1(space()).or(comment))
+    }
+}
 
 parser! {
     fn identifier[I]()(I) -> Ident
@@ -46,14 +54,14 @@ parser! {
     fn graph[I]()(I) -> Graph
         where [I: Stream<Item=char>]
     {
-        let id_list = || sep_by(spaces().with(identifier().skip(spaces())), token(','));
+        let id_list = || sep_by(whitespace().with(identifier().skip(whitespace())), token(','));
 
-        (string("graph").skip(spaces()),
-         identifier().skip(spaces()),
+        (string("graph").skip(whitespace()),
+         identifier().skip(whitespace()),
          between(token('('), token(')'), id_list()),
-         spaces().with(string("->")).skip(spaces()),
-         between(token('('), token(')').skip(spaces()), id_list()),
-         between(token('{'), token('}'), sep_by(spaces().with(assignment()).skip(spaces()),
+         whitespace().with(string("->")).skip(whitespace()),
+         between(token('('), token(')').skip(whitespace()), id_list()),
+         between(token('{'), token('}'), sep_by(whitespace().with(assignment()).skip(whitespace()),
                                                 token(';').or(newline()))),
         ).map( |t| Graph{name: t.1, inputs: t.2, outputs: t.4, body: t.5})
     }
@@ -114,7 +122,7 @@ parser! {
         where[I: Stream<Item=char>]
     {
         between(token('['), token(']'),
-                sep_by(spaces().with(rvalue_expr().skip(spaces())), token(',')))
+                sep_by(whitespace().with(rvalue_expr().skip(whitespace())), token(',')))
             .map(|v| RvalueExpr::Array(v))
     }
 }
@@ -124,7 +132,7 @@ parser! {
         where[I: Stream<Item=char>]
     {
         between(token('('), token(')'),
-                sep_by(spaces().with(rvalue_expr().skip(spaces())), token(',')))
+                sep_by(whitespace().with(rvalue_expr().skip(whitespace())), token(',')))
             .map(|v| RvalueExpr::Tuple(v))
     }
 }
@@ -145,7 +153,7 @@ parser! {
         where[I: Stream<Item=char>]
     {
         between(token('['), token(']'),
-                sep_by(spaces().with(lvalue_expr().skip(spaces())), token(',')))
+                sep_by(whitespace().with(lvalue_expr().skip(whitespace())), token(',')))
             .map(|v| LvalueExpr::Array(v))
     }
 }
@@ -155,12 +163,12 @@ parser! {
         where[I: Stream<Item=char>]
     {
         let with_paren = between(token('('), token(')'),
-                sep_by(spaces().with(lvalue_expr().skip(spaces())), token(',')))
+                sep_by(whitespace().with(lvalue_expr().skip(whitespace())), token(',')))
             .map(|v| LvalueExpr::Tuple(v));
 
         with_paren.or(
             (lvalue_expr(),
-             many1::<Vec<LvalueExpr>, _>(spaces().with(token(',').with(spaces().with(lvalue_expr())))))
+             many1::<Vec<LvalueExpr>, _>(whitespace().with(token(',').with(whitespace().with(lvalue_expr())))))
                 .map(|mut t| LvalueExpr::Tuple({ t.1.insert(0, t.0); t.1})))
     }
 }
@@ -181,8 +189,8 @@ parser! {
     fn argument[I]()(I) -> Argument
         where[I: Stream<Item=char>]
     {
-        let named = (identifier().skip(spaces()),
-                     token('=').skip(spaces()),
+        let named = (identifier().skip(whitespace()),
+                     token('=').skip(whitespace()),
                      rvalue_expr())
             .map(|t| Argument::Named(t.0, t.2));
 
@@ -194,9 +202,9 @@ parser! {
     fn invocation[I]()(I) -> Invocation
         where[I: Stream<Item=char>]
     {
-        (identifier().skip(spaces()),
+        (identifier().skip(whitespace()),
          between(token('('), token(')'),
-                 sep_by(spaces().with(argument().skip(spaces())), token(','))))
+                 sep_by(whitespace().with(argument().skip(whitespace())), token(','))))
             .map(|t| Invocation{name: t.0, args: t.1})
     }
 }
@@ -205,9 +213,9 @@ parser ! {
     fn assignment[I]()(I) -> Assignment
         where [I: Stream<Item=char>]
     {
-        (lvalue_expr().skip(spaces()),
-         token('=').skip(spaces()),
-         invocation().skip(spaces()).skip(token(';')))
+        (lvalue_expr().skip(whitespace()),
+         token('=').skip(whitespace()),
+         invocation().skip(whitespace()).skip(token(';')))
             .map(|t| Assignment{lexpr: t.0, invoc: t.2})
     }
 }
@@ -240,9 +248,11 @@ graph hoge ( input ) -> (output)
                              body: Vec::new()}, "")));
 
         assert_eq!(graph().parse(r#"
+# comment
 graph barfoo( input ) -> ( output )
-{
-    input = external(shape = [1,10])
+{ # comment
+    # comment
+    input = external(shape = [1,10]) #comment
     intermediate, extra = bar(input, alpha = 2)
     output = foo(intermediate, size = [3,5])
 }
