@@ -3,7 +3,7 @@
 #[macro_use]
 extern crate combine;
 
-use combine::parser::char::{letter, char, alpha_num, space, string, newline, digit};
+use combine::parser::char::{letter, char, alpha_num, space, string, digit};
 use combine::stream::Stream;
 
 use combine::*;
@@ -60,8 +60,8 @@ parser! {
          between(token('('), token(')'), id_list()),
          whitespace().with(string("->")).skip(whitespace()),
          between(token('('), token(')').skip(whitespace()), id_list()),
-         between(token('{'), token('}'), sep_by(whitespace().with(assignment()).skip(whitespace()),
-                                                token(';').or(newline()))),
+         between(token('{').skip(whitespace()), whitespace().with(token('}')),
+                 many((whitespace(), assignment()).map(|t| t.1)))
         ).map( |t| Graph{name: t.1, inputs: t.2, outputs: t.4, body: t.5})
     }
 }
@@ -280,7 +280,7 @@ parser ! {
     {
         (lvalue_expr(),
          whitespace().with(token('=')).skip(whitespace()),
-         invocation().skip(whitespace().and(token(';').or(newline()))))
+         invocation().skip(whitespace().with(optional(token(';')))))
             .map(|t| Assignment{lexpr: t.0, invoc: t.2})
     }
 }
@@ -303,14 +303,13 @@ mod tests {
         assert_eq!(identifier().parse(""), Err(UnexpectedParse));
     }
 
+    #[test]
     fn graph_test() {
         assert_eq!(
             graph().parse(
-                r#"
-graph hoge ( input ) -> (output)
+                r#"graph hoge ( input ) -> (output)
 {
-}
-"#,
+}"#,
             ),
             Ok((
                 Graph {
@@ -324,17 +323,14 @@ graph hoge ( input ) -> (output)
         );
 
         assert_eq!(
-            graph().parse(
-                r#"
-# comment
-graph barfoo( input ) -> ( output )
+            graph().easy_parse(
+                r#"graph barfoo( input ) -> ( output )
 { # comment
     # comment
     input = external(shape = [1,10]) #comment
     intermediate, extra = bar(input, alpha = 2)
     output = foo(intermediate, size = [3,5])
-}
-"#,
+}"#,
             ),
             Ok((
                 Graph {
@@ -452,9 +448,6 @@ graph barfoo( input ) -> ( output )
 
     #[test]
     fn assignment_test() {
-        println!("{:?}",assignment().easy_parse("a1, a2 = fuga( foo ) ;"));
-
-
         assert_eq!(
             assignment().parse("hoge = fuga( foo ) ;"),
             Ok((
@@ -486,8 +479,8 @@ graph barfoo( input ) -> ( output )
             literal().parse(r#""test""#),
             Ok((Literal::String("test".to_string()), ""))
         );
-        // TODO: assert_eq!(literal().parse("true"), Ok((Literal::Logical(true), "")));
-        // TODO: assert_eq!(literal().parse("false"), Ok((Literal::Logical(false), "")));
+        assert_eq!(literal().parse("true"), Ok((Literal::Logical(true), "")));
+        assert_eq!(literal().parse("false"), Ok((Literal::Logical(false), "")));
     }
 
     #[test]
