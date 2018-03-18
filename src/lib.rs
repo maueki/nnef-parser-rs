@@ -3,7 +3,7 @@
 #[macro_use]
 extern crate combine;
 
-use combine::parser::char::{letter, char, alpha_num, space, string, digit};
+use combine::parser::char::{letter, char, alpha_num, space, spaces, string, digit};
 use combine::stream::Stream;
 
 use combine::*;
@@ -38,6 +38,30 @@ parser! {
         (letter().or(char('_')),
          many(alpha_num().or(char('_'))))
             .map(|(t1, t2): (char, String)| Ident::new(t1.to_string() + t2.as_str()))
+    }
+}
+
+parser! {
+    fn version[I]()(I) -> Numeric
+        where [I: Stream<Item=char>]
+    {
+        try(string("version").with(spaces()).with(numeric()))
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Document {
+    version: Numeric,
+    graph: Graph,
+}
+
+parser! {
+    fn document[I]()(I) -> Document
+        where [I: Stream<Item=char>]
+    {
+        whitespace().with((version().skip(whitespace()), 
+                           graph().skip(whitespace()))
+                          .map(|t| Document{ version: t.0, graph: t.1}))
     }
 }
 
@@ -495,4 +519,19 @@ mod tests {
         );
     }
 
+    #[test]
+    fn document_test() {
+        assert_eq!(
+            document().easy_parse(r#"
+version 1
+
+graph g (i) -> (o) {}
+"#),
+            Ok((Document{version: Numeric::new("1"),
+                         graph: Graph{
+                             name: Ident::new("g"),
+                             inputs: vec![Ident::new("i")],
+                             outputs: vec![Ident::new("o")],
+                             body: vec![]}}, "")));
+    }
 }
