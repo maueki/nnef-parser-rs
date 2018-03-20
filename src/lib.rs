@@ -5,12 +5,24 @@ extern crate combine;
 
 use combine::parser::char::{letter, char, alpha_num, space, spaces, string, digit};
 use combine::stream::Stream;
-use combine::parser::sequence::{Skip};
-
+use combine::parser::sequence::Skip;
+use combine::easy;
 use combine::*;
 
 use std::vec::Vec;
-//use std::boxed::Box;
+
+pub type Errors<I> = easy::Errors<char, <I as StreamOnce>::Range, <I as StreamOnce>::Position>;
+
+pub fn parse_doc<I>(
+    input: I,
+) -> Result<Document, Errors<I>>
+where
+    I: Stream<Item = char>,
+    <I as StreamOnce>::Error: ParseError<char, <I as StreamOnce>::Range, <I as StreamOnce>::Position>,
+    <I as StreamOnce>::Position: std::default::Default,
+{
+    document().easy_parse(input).map(|(d, _)| d)
+}
 
 #[derive(Debug, PartialEq)]
 pub struct Ident {
