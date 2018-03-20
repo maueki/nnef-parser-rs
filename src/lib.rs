@@ -13,7 +13,7 @@ use std::vec::Vec;
 
 #[derive(Debug, PartialEq)]
 pub struct Ident {
-    name: String,
+    pub name: String,
 }
 
 impl Ident {
@@ -51,8 +51,8 @@ parser! {
 
 #[derive(Debug, PartialEq)]
 pub struct Document {
-    version: Numeric,
-    graph: Graph,
+    pub version: Numeric,
+    pub graph: Graph,
 }
 
 parser! {
@@ -67,10 +67,10 @@ parser! {
 
 #[derive(Debug, PartialEq)]
 pub struct Graph {
-    name: Ident,
-    inputs: Vec<Ident>,
-    outputs: Vec<Ident>,
-    body: Vec<Assignment>,
+    pub name: Ident,
+    pub inputs: Vec<Ident>,
+    pub outputs: Vec<Ident>,
+    pub body: Vec<Assignment>,
 }
 
 parser! {
@@ -92,9 +92,9 @@ parser! {
 
 #[derive(Debug, PartialEq)]
 pub struct Numeric {
-    int: String,
-    frac: Option<String>,
-    exp: Option<String>,
+    pub int: String,
+    pub frac: Option<String>,
+    pub exp: Option<String>,
 }
 
 impl Numeric {
@@ -147,14 +147,14 @@ pub enum Argument {
 
 #[derive(Debug, PartialEq)]
 pub struct Invocation {
-    name: Ident,
-    args: Vec<Argument>,
+    pub name: Ident,
+    pub args: Vec<Argument>,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Assignment {
-    lexpr: LvalueExpr,
-    invoc: Invocation,
+    pub lexpr: LvalueExpr,
+    pub invoc: Invocation,
 }
 
 parser! {
