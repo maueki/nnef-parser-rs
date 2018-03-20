@@ -5,6 +5,7 @@ extern crate combine;
 
 use combine::parser::char::{letter, char, alpha_num, space, spaces, string, digit};
 use combine::stream::Stream;
+use combine::parser::sequence::{Skip};
 
 use combine::*;
 
@@ -14,6 +15,19 @@ use std::vec::Vec;
 #[derive(Debug, PartialEq)]
 pub struct Ident {
     pub name: String,
+}
+
+fn lex<P>(p: P) -> Skip<P, whitespace<P::Input>>
+where
+    P: Parser,
+    P::Input: Stream<Item = char>,
+    <P::Input as StreamOnce>::Error: ParseError<
+        <P::Input as StreamOnce>::Item,
+        <P::Input as StreamOnce>::Range,
+        <P::Input as StreamOnce>::Position,
+    >,
+{
+    p.skip(whitespace())
 }
 
 impl Ident {
@@ -59,8 +73,8 @@ parser! {
     fn document[I]()(I) -> Document
         where [I: Stream<Item=char>]
     {
-        whitespace().with((version().skip(whitespace()), 
-                           graph().skip(whitespace()))
+        whitespace().with((lex(version()),
+                           lex(graph()))
                           .map(|t| Document{ version: t.0, graph: t.1}))
     }
 }
@@ -77,14 +91,14 @@ parser! {
     fn graph[I]()(I) -> Graph
         where [I: Stream<Item=char>]
     {
-        let id_list = || sep_by(whitespace().with(identifier().skip(whitespace())), token(','));
+        let id_list = || sep_by(whitespace().with(lex(identifier())), token(','));
 
-        (string("graph").skip(whitespace()),
-         identifier().skip(whitespace()),
+        (lex(string("graph")),
+         lex(identifier()),
          between(token('('), token(')'), id_list()),
-         whitespace().with(string("->")).skip(whitespace()),
-         between(token('('), token(')').skip(whitespace()), id_list()),
-         between(token('{').skip(whitespace()), whitespace().with(token('}')),
+         lex(whitespace().with(string("->"))),
+         between(token('('), lex(token(')')), id_list()),
+         between(lex(token('{')), whitespace().with(token('}')),
                  many((whitespace(), assignment()).map(|t| t.1)))
         ).map( |t| Graph{name: t.1, inputs: t.2, outputs: t.4, body: t.5})
     }
@@ -192,7 +206,7 @@ parser! {
         where[I: Stream<Item=char>]
     {
         between(token('['), token(']'),
-                sep_by(whitespace().with(rvalue_expr().skip(whitespace())), token(',')))
+                sep_by(whitespace().with(lex(rvalue_expr())), token(',')))
             .map(|v| RvalueExpr::Array(v))
     }
 }
@@ -202,7 +216,7 @@ parser! {
         where[I: Stream<Item=char>]
     {
         between(token('('), token(')'),
-                sep_by(whitespace().with(rvalue_expr().skip(whitespace())), token(',')))
+                sep_by(whitespace().with(lex(rvalue_expr())), token(',')))
             .map(|v| RvalueExpr::Tuple(v))
     }
 }
@@ -225,7 +239,7 @@ parser! {
         where[I: Stream<Item=char>]
     {
         between(token('['), token(']'),
-                sep_by(whitespace().with(lvalue_expr().skip(whitespace())), token(',')))
+                sep_by(whitespace().with(lex(lvalue_expr())), token(',')))
             .map(|v| LvalueExpr::Array(v))
     }
 }
@@ -235,7 +249,7 @@ parser! {
         where[I: Stream<Item=char>]
     {
         let with_paren = between(token('('), token(')'),
-                sep_by(whitespace().with(lvalue_expr().skip(whitespace())), token(',')))
+                sep_by(whitespace().with(lex(lvalue_expr())), token(',')))
             .map(|v| LvalueExpr::Tuple(v));
 
         // TODO: why match failed?
@@ -243,9 +257,9 @@ parser! {
         //                      many1(whitespace().with(token(',')).skip(whitespace())
         //                            .with(identifier().map(LvalueExpr::Id))))
 
-        let without_paren = (identifier().map(LvalueExpr::Id).skip(whitespace()),
-                             many1(token(',').skip(whitespace())
-                                   .with(identifier().map(LvalueExpr::Id)).skip(whitespace())))
+        let without_paren = (lex(identifier()).map(LvalueExpr::Id),
+                             many1(lex(token(','))
+                                   .with(lex(identifier()).map(LvalueExpr::Id))))
             .map(|(i, mut is): (LvalueExpr, Vec<LvalueExpr>)| LvalueExpr::Tuple({
                 is.insert(0, i);
                 is
@@ -275,8 +289,8 @@ parser! {
     fn argument[I]()(I) -> Argument
         where[I: Stream<Item=char>]
     {
-        let named = (identifier().skip(whitespace()),
-                     token('=').skip(whitespace()),
+        let named = (lex(identifier()),
+                     lex(token('=')),
                      rvalue_expr())
             .map(|t| Argument::Named(t.0, t.2));
 
@@ -291,9 +305,9 @@ parser! {
     fn invocation[I]()(I) -> Invocation
         where[I: Stream<Item=char>]
     {
-        (identifier().skip(whitespace()),
+        (lex(identifier()),
          between(token('('), token(')'),
-                 sep_by(whitespace().with(argument()).skip(whitespace()), token(','))))
+                 sep_by(lex(whitespace().with(argument())), token(','))))
             .map(|t| Invocation{name: t.0, args: t.1})
     }
 }
@@ -303,7 +317,7 @@ parser ! {
         where [I: Stream<Item=char>]
     {
         (lvalue_expr(),
-         whitespace().with(token('=')).skip(whitespace()),
+         whitespace().with(lex(token('='))),
          invocation().skip(whitespace().with(optional(token(';')))))
             .map(|t| Assignment{lexpr: t.0, invoc: t.2})
     }
