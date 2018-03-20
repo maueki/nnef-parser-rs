@@ -422,17 +422,30 @@ mod tests {
     fn lvalue_expr_test() {
         assert_eq!(
             lvalue_expr().parse("hoge"),
-            Ok((LvalueExpr::Id(Ident::new("hoge")), "")));
+            Ok((LvalueExpr::Id(Ident::new("hoge")), ""))
+        );
 
         assert_eq!(
             lvalue_expr().parse("hoge, fuga"),
-            Ok((LvalueExpr::Tuple(vec![LvalueExpr::Id(Ident::new("hoge")),
-                                       LvalueExpr::Id(Ident::new("fuga"))]), "")));
+            Ok((
+                LvalueExpr::Tuple(vec![
+                    LvalueExpr::Id(Ident::new("hoge")),
+                    LvalueExpr::Id(Ident::new("fuga")),
+                ]),
+                "",
+            ))
+        );
 
         assert_eq!(
             lvalue_expr().parse("a1, a2 ="),
-            Ok((LvalueExpr::Tuple(vec![LvalueExpr::Id(Ident::new("a1")),
-                                       LvalueExpr::Id(Ident::new("a2"))]), "=")));
+            Ok((
+                LvalueExpr::Tuple(vec![
+                    LvalueExpr::Id(Ident::new("a1")),
+                    LvalueExpr::Id(Ident::new("a2")),
+                ]),
+                "=",
+            ))
+        );
     }
 
     #[test]
@@ -486,11 +499,22 @@ mod tests {
             ))
         );
 
-        assert_eq!(assignment().parse("a1, a2 = fuga ( foo );"),
-                   Ok((Assignment{lexpr: LvalueExpr::Tuple(vec![LvalueExpr::Id(Ident::new("a1")),
-                                                                LvalueExpr::Id(Ident::new("a2"))]),
-                                  invoc: Invocation{name:Ident::new("fuga"),
-                                                    args: vec![Argument::Rval(RvalueExpr::Id(Ident::new("foo")))]}}, "")));
+        assert_eq!(
+            assignment().parse("a1, a2 = fuga ( foo );"),
+            Ok((
+                Assignment {
+                    lexpr: LvalueExpr::Tuple(vec![
+                        LvalueExpr::Id(Ident::new("a1")),
+                        LvalueExpr::Id(Ident::new("a2")),
+                    ]),
+                    invoc: Invocation {
+                        name: Ident::new("fuga"),
+                        args: vec![Argument::Rval(RvalueExpr::Id(Ident::new("foo")))],
+                    },
+                },
+                "",
+            ))
+        );
     }
 
     #[test]
@@ -522,16 +546,25 @@ mod tests {
     #[test]
     fn document_test() {
         assert_eq!(
-            document().easy_parse(r#"
+            document().easy_parse(
+                r#"
 version 1
 
 graph g (i) -> (o) {}
-"#),
-            Ok((Document{version: Numeric::new("1"),
-                         graph: Graph{
-                             name: Ident::new("g"),
-                             inputs: vec![Ident::new("i")],
-                             outputs: vec![Ident::new("o")],
-                             body: vec![]}}, "")));
+"#,
+            ),
+            Ok((
+                Document {
+                    version: Numeric::new("1"),
+                    graph: Graph {
+                        name: Ident::new("g"),
+                        inputs: vec![Ident::new("i")],
+                        outputs: vec![Ident::new("o")],
+                        body: vec![],
+                    },
+                },
+                "",
+            ))
+        );
     }
 }
