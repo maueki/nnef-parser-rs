@@ -206,6 +206,8 @@ parser! {
             numeric().map(Literal::Num),
             between(token('"'), token('"'),
                     many(satisfy(|c| c != '"'))).map(Literal::String),
+            between(token('\''), token('\''),
+                    many(satisfy(|c| c != '\''))).map(Literal::String),
             try(string("true")).map(|_| Literal::Logical(true)),
             try(string("false")).map(|_| Literal::Logical(false))
         }
@@ -553,6 +555,12 @@ mod tests {
             literal().parse(r#""test""#),
             Ok((Literal::String("test".to_string()), ""))
         );
+
+        assert_eq!(
+            literal().parse("'test'"),
+            Ok((Literal::String("test".to_string()), ""))
+        );
+
         assert_eq!(literal().parse("true"), Ok((Literal::Logical(true), "")));
         assert_eq!(literal().parse("false"), Ok((Literal::Logical(false), "")));
     }
