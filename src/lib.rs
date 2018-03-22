@@ -602,7 +602,9 @@ graph g (i) -> (o) {}
         );
     }
 
-static ALEXNET: &'static str = r#"graph AlexNet( input ) -> ( output )
+static ALEXNET: &'static str = r#"
+version 1
+graph AlexNet( input ) -> ( output )
 {
     conv1 = conv(input, kernel1, bias1, padding = [(0,0), (0,0)],
                  border = 'constant', stride = [4, 4], dilation = [1, 1])
@@ -653,7 +655,7 @@ static ALEXNET: &'static str = r#"graph AlexNet( input ) -> ( output )
 
     #[test]
     fn alexnet_flat_test() {
-        match graph().easy_parse(ALEXNET) {
+        match parse_doc(ALEXNET) {
             Ok(_) => (),
             err => {
                 println!("{:?}", err);
