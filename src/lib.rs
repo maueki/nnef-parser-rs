@@ -85,9 +85,10 @@ parser! {
     fn document[I]()(I) -> Document
         where [I: Stream<Item=char>]
     {
-        whitespace().with((lex(version()),
-                           lex(graph()))
-                          .map(|t| Document{ version: t.0, graph: t.1}))
+        (whitespace(),
+         lex(version()),
+         lex(graph()))
+            .map(|t| Document{ version: t.1, graph: t.2})
     }
 }
 
@@ -103,15 +104,15 @@ parser! {
     fn graph[I]()(I) -> Graph
         where [I: Stream<Item=char>]
     {
-        let id_list = || sep_by(whitespace().with(lex(identifier())), token(','));
+        let id_list = || sep_by(lex(identifier()), lex(token(',')));
 
         (lex(string("graph")),
          lex(identifier()),
-         between(token('('), token(')'), id_list()),
-         lex(whitespace().with(string("->"))),
-         between(token('('), lex(token(')')), id_list()),
-         between(lex(token('{')), whitespace().with(token('}')),
-                 many((whitespace(), assignment()).map(|t| t.1)))
+         between(lex(token('(')), lex(token(')')), id_list()),
+         lex(string("->")),
+         between(lex(token('(')), lex(token(')')), id_list()),
+         between(lex(token('{')), token('}'),
+                 many(lex(assignment())))
         ).map( |t| Graph{name: t.1, inputs: t.2, outputs: t.4, body: t.5})
     }
 }
@@ -320,8 +321,8 @@ parser! {
         where[I: Stream<Item=char>]
     {
         (lex(identifier()),
-         between(token('('), token(')'),
-                 sep_by(lex(whitespace().with(argument())), token(','))))
+         between(lex(token('(')), token(')'),
+                 sep_by(lex(argument()), lex(token(',')))))
             .map(|t| Invocation{name: t.0, args: t.1})
     }
 }
@@ -330,8 +331,8 @@ parser ! {
     fn assignment[I]()(I) -> Assignment
         where [I: Stream<Item=char>]
     {
-        (lvalue_expr(),
-         whitespace().with(lex(token('='))),
+        (lex(lvalue_expr()),
+         lex(token('=')),
          invocation().skip(whitespace().with(optional(token(';')))))
             .map(|t| Assignment{lexpr: t.0, invoc: t.2})
     }
